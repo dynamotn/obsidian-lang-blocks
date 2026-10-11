@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  checkMarkers,
   hiddenRuns,
   isVisible,
   languagesIn,
@@ -168,6 +169,48 @@ describe("hiddenRuns", () => {
   test("handles a block that ends the note without a closing marker", () => {
     expect(hiddenRuns(lineLangs("<!--lang:en-US-->\nlast"), "vi-VN")).toEqual([
       { start: 0, end: 1, lang: "en-US", lines: 1 },
+    ])
+  })
+})
+
+describe("checkMarkers", () => {
+  const languages = ["vi-VN", "en-US"]
+  const kindsAt = (src: string) => checkMarkers(src, languages).map((p) => [p.line, p.kind])
+
+  test("finds nothing wrong in a well-formed note", () => {
+    expect(kindsAt("<!--lang:vi-VN-->\na\n<!--lang:en-US-->\nb\n<!--lang:*-->")).toEqual([])
+    expect(kindsAt("no markers at all")).toEqual([])
+  })
+
+  test("flags a marker sharing its line with other text", () => {
+    const src = ["<!--lang:vi-VN-->", "Dùng `<!--lang:*-->` để mở khối chung.", "<!--lang:*-->"].join("\n")
+    expect(kindsAt(src)).toEqual([[1, "inline"]])
+  })
+
+  test("accepts surrounding whitespace on a marker line", () => {
+    expect(kindsAt("  <!--lang:vi-VN-->  \nx\n<!--lang:*-->")).toEqual([])
+  })
+
+  test("flags a language that isn't configured", () => {
+    const problems = checkMarkers("<!--lang:vi-vn-->\nx\n<!--lang:*-->", languages)
+    expect(problems.map((p) => p.kind)).toEqual(["unknown"])
+    expect(problems[0]?.message).toContain('"vi-vn"')
+  })
+
+  test("flags a block left open at the end of the note, at its marker", () => {
+    expect(kindsAt("<!--lang:vi-VN-->\na\n<!--lang:en-US-->\nb")).toEqual([[2, "unclosed"]])
+  })
+
+  test("ignores markers inside a code fence", () => {
+    const src = ["```markdown", "Use <!--lang:fr-FR--> here", "<!--lang:en-US-->", "```"].join("\n")
+    expect(kindsAt(src)).toEqual([])
+  })
+
+  test("reports every problem of a line, sorted by line", () => {
+    expect(kindsAt("text <!--lang:xx-->\nmore")).toEqual([
+      [0, "inline"],
+      [0, "unknown"],
+      [0, "unclosed"],
     ])
   })
 })

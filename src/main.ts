@@ -10,13 +10,17 @@
 import type { EditorView } from "@codemirror/view"
 import {
   MarkdownView,
+  Modal,
+  Notice,
   Plugin,
   PluginSettingTab,
   Setting,
   type App,
   type MarkdownPostProcessorContext,
+  type TFile,
 } from "obsidian"
 import {
+  checkMarkers,
   isVisible,
   lineLangs,
   modeLabel,
@@ -26,8 +30,10 @@ import {
   titleFor,
   type Lang,
   type LineLang,
+  type MarkerProblem,
   type Mode,
 } from "./logic"
+import { langBlocksDiagnostics, setDiagnosticsEffect, setLanguagesEffect } from "./diagnostics"
 import { langBlocksEditor, setEnabledEffect, setModeEffect, setSourceModeEffect } from "./editor"
 
 interface Settings {
@@ -41,9 +47,11 @@ interface Settings {
   livePreview: boolean
   /** Fold them in source mode too. */
   sourceMode: boolean
+  /** Highlight marker lines that probably don't do what was meant. */
+  diagnostics: boolean
 }
 
-const DEFAULTS: Settings = { languages: ["vi-VN", "en-US"], mode: "vi-VN", localizedTitle: true, livePreview: true, sourceMode: false }
+const DEFAULTS: Settings = { languages: ["vi-VN", "en-US"], mode: "vi-VN", localizedTitle: true, livePreview: true, sourceMode: false, diagnostics: true }
 
 const SECTION_ATTR = "data-lang-block"
 const HIDDEN_CLASS = "lang-blocks-hidden"
@@ -68,6 +76,12 @@ export default class LangBlocksPlugin extends Plugin {
         reveal: () => void this.setMode("all"),
       }),
     )
+    this.registerEditorExtension(
+      langBlocksDiagnostics({
+        enabled: () => this.settings.diagnostics,
+        languages: () => this.settings.languages,
+      }),
+    )
 
     this.statusEl = this.addStatusBarItem()
     this.statusEl.addClass("mod-clickable", "lang-blocks-status")
@@ -76,6 +90,11 @@ export default class LangBlocksPlugin extends Plugin {
 
     this.addCommand({ id: "cycle", name: "Switch to the next language", callback: () => void this.cycle() })
     this.addCommand({ id: "show-all", name: "Show every language", callback: () => void this.setMode("all") })
+    this.addCommand({
+      id: "check-vault",
+      name: "Check language markers in every note",
+      callback: () => void this.checkVault(),
+    })
     for (const lang of this.settings.languages) {
       this.addCommand({ id: `show-${lang}`, name: `Show ${lang} only`, callback: () => void this.setMode(lang) })
     }
@@ -135,6 +154,8 @@ export default class LangBlocksPlugin extends Plugin {
       setModeEffect.of(this.settings.mode),
       setEnabledEffect.of(this.settings.livePreview),
       setSourceModeEffect.of(this.settings.sourceMode),
+      setDiagnosticsEffect.of(this.settings.diagnostics),
+      setLanguagesEffect.of(this.settings.languages),
     ]
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view
@@ -143,6 +164,23 @@ export default class LangBlocksPlugin extends Plugin {
       const cm = (view.editor as unknown as { cm?: EditorView }).cm
       cm?.dispatch({ effects })
     }
+  }
+
+  /** Check the markers of every note and list the problems found. */
+  private async checkVault() {
+    const found: { file: TFile; problems: MarkerProblem[] }[] = []
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const text = await this.app.vault.cachedRead(file)
+      if (!text.includes("<!--lang:")) continue
+      const problems = checkMarkers(text, this.settings.languages)
+      if (problems.length > 0) found.push({ file, problems })
+    }
+    if (found.length === 0) {
+      new Notice("Lang Blocks: no marker problems found.")
+      return
+    }
+    found.sort((a, b) => a.file.path.localeCompare(b.file.path))
+    new ProblemsModal(this.app, found).open()
   }
 
   /** Post-processor: tag a rendered section with the language of its source lines. */
@@ -175,6 +213,40 @@ export default class LangBlocksPlugin extends Plugin {
   /** Run `fn` on the container of every open leaf, in every window. */
   private forEachRoot(fn: (root: HTMLElement) => void) {
     this.app.workspace.iterateAllLeaves((leaf) => fn(leaf.view.containerEl))
+  }
+}
+
+/** The result of "Check language markers in every note", grouped by note. */
+class ProblemsModal extends Modal {
+  constructor(
+    app: App,
+    private found: { file: TFile; problems: MarkerProblem[] }[],
+  ) {
+    super(app)
+  }
+
+  override onOpen() {
+    const total = this.found.reduce((n, f) => n + f.problems.length, 0)
+    this.setTitle(`Language marker problems: ${total} in ${this.found.length} notes`)
+    const list = this.contentEl.createEl("div", { cls: "lang-blocks-report" })
+    for (const { file, problems } of this.found) {
+      list.createEl("h4", { text: file.path })
+      const ul = list.createEl("ul")
+      for (const problem of problems) {
+        const li = ul.createEl("li")
+        const link = li.createEl("a", { text: `Line ${problem.line + 1}`, href: "#" })
+        li.appendText(`: ${problem.message}`)
+        link.addEventListener("click", (event) => {
+          event.preventDefault()
+          this.close()
+          void this.app.workspace.getLeaf(false).openFile(file, { eState: { line: problem.line } })
+        })
+      }
+    }
+  }
+
+  override onClose() {
+    this.contentEl.empty()
   }
 }
 
@@ -231,6 +303,20 @@ class LangBlocksSettingTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.livePreview).onChange(async (value) => {
           this.plugin.settings.livePreview = value
+          await this.plugin.saveSettings()
+          this.plugin.dispatchToEditors()
+        }),
+      )
+
+    new Setting(containerEl)
+      .setName("Highlight marker problems")
+      .setDesc(
+        "In the editor, highlight markers that share a line with other text, use a language that isn't " +
+          "configured, or open a block that is never closed. Hover a line for the reason.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.diagnostics).onChange(async (value) => {
+          this.plugin.settings.diagnostics = value
           await this.plugin.saveSettings()
           this.plugin.dispatchToEditors()
         }),

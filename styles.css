@@ -26,3 +26,15 @@
   color: var(--text-muted);
   border-left-color: var(--interactive-accent);
 }
+
+/* Editor lines whose language marker probably doesn't do what was meant. */
+.cm-line.lang-blocks-problem {
+  background-color: rgba(var(--color-red-rgb), 0.12);
+  text-decoration: wavy underline rgba(var(--color-red-rgb), 0.6);
+  text-underline-offset: 3px;
+}
+
+/* "Check language markers in every note" report. */
+.lang-blocks-report h4 {
+  margin: var(--size-4-3) 0 var(--size-4-1);
+}

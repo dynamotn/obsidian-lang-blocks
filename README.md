@@ -41,6 +41,12 @@ reads the same in Obsidian as on the published garden.
   you never edit text you can't see. Source mode shows everything unless
   *Fold in source mode too* is on.
 
+- **Marker problems** are highlighted in the editor, with the reason on hover:
+  a marker sharing its line with other text (it still switches the block), a
+  language that isn't configured (often a typo such as `vi-vn`), or a block
+  left open at the end of the note. *Check language markers in every note*
+  lists them for the whole vault; click one to jump to its line.
+
 Switching never rewrites a note: reading mode toggles a CSS class on sections
 that are already rendered, and Live Preview only changes editor decorations.
 
@@ -50,14 +56,15 @@ that are already rendered, and Live Preview only changes editor decorations.
   cycles through them. Default `vi-VN, en-US`.
 - **Localized inline title**: on by default.
 - **Fold other languages in Live Preview**: on by default.
+- **Highlight marker problems**: on by default.
 - **Fold in source mode too**: off by default. Line numbers skip the folded
   lines.
 
 ## Limits
 
 - Put every marker on a line of its own. A line that merely mentions one, such
-  as a sentence quoting `<!--lang:*-->` in inline code, still counts as a
-  marker (the datme rule) and silently ends the block it sits in.
+  as a sentence quoting a whole marker in inline code, still counts as a marker
+  (the datme rule) and ends the block it sits in; the editor highlights it.
 - Embedded notes and hover previews show every block: Obsidian gives the plugin
   no source position for them, and the plugin never hides what it can't place.
 - A section that mixes two languages, which happens only when a marker sits

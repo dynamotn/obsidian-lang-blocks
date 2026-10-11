@@ -97,6 +97,60 @@ export function hiddenRuns(langs: LineLang[], mode: Mode): HiddenRun[] {
   return runs
 }
 
+/** A likely mistake in a note's markers. */
+export interface MarkerProblem {
+  /** 0-based line of the marker. */
+  line: number
+  kind: "inline" | "unknown" | "unclosed"
+  message: string
+}
+
+/**
+ * Find markers that probably don't do what the writer meant:
+ * - `inline`: a marker sharing its line with other text, such as a sentence
+ *   quoting one in inline code; it still switches the block (the datme rule);
+ * - `unknown`: a language missing from `languages`, often a typo like `vi-vn`;
+ * - `unclosed`: the last block runs to the end of the note without
+ *   `<!--lang:*-->`, so anything added below it joins that language.
+ * Markers inside a code fence are ignored, as everywhere else.
+ */
+export function checkMarkers(src: string, languages: Lang[]): MarkerProblem[] {
+  const problems: MarkerProblem[] = []
+  let inFence = false
+  let open: { line: number; lang: Lang } | undefined
+  src.split("\n").forEach((raw, i) => {
+    const line = raw.replace(/[\t\r ]*$/, "")
+    if (line.includes("```")) inFence = !inFence
+    if (inFence) return
+    const m = line.match(MARKER)
+    if (!m) return
+    const lang = m[1] ?? ""
+    if (line.trim() !== m[0]) {
+      problems.push({
+        line: i,
+        kind: "inline",
+        message: "This line contains a language marker and other text, so it still switches the block. Put the marker on a line of its own, or don't quote it whole.",
+      })
+    }
+    if (lang !== "*" && !languages.includes(lang)) {
+      problems.push({
+        line: i,
+        kind: "unknown",
+        message: `"${lang}" isn't one of the configured languages (${languages.join(", ")}).`,
+      })
+    }
+    open = lang === "*" ? undefined : { line: i, lang }
+  })
+  if (open) {
+    problems.push({
+      line: open.line,
+      kind: "unclosed",
+      message: `The ${open.lang} block runs to the end of the note. Close it with <!--lang:*--> so text added below stays shared.`,
+    })
+  }
+  return problems.sort((a, b) => a.line - b.line)
+}
+
 /** The languages a note has blocks for, in order of first appearance. */
 export function languagesIn(langs: LineLang[]): Lang[] {
   const seen: Lang[] = []
