@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   checkMarkers,
+  displayLang,
+  fallbackFor,
   hiddenRuns,
   isVisible,
   languagesIn,
@@ -300,5 +302,42 @@ describe("translations", () => {
 
   test("reports a language the note has no block for", () => {
     expect(missingTranslation(filled.join("\n"), "fr-FR")).toBe(true)
+  })
+})
+
+describe("fallback language", () => {
+  const viOnly = ["<!--lang:vi-VN-->", "Đã viết.", "<!--lang:en-US-->", "## Goals", "<!--lang:*-->"].join("\n")
+  const withFm = (fm: string) => `---\ntitle: x\n${fm}\n---\n${viOnly}`
+
+  test("takes the default when the note sets nothing", () => {
+    expect(fallbackFor(viOnly, "vi-VN")).toBe("vi-VN")
+    expect(fallbackFor(viOnly, null)).toBeNull()
+  })
+
+  test("lets fallback_lang in frontmatter override or turn it off", () => {
+    expect(fallbackFor(withFm("fallback_lang: en-US"), "vi-VN")).toBe("en-US")
+    expect(fallbackFor(withFm('fallback_lang: "fr-FR"'), "vi-VN")).toBe("fr-FR")
+    expect(fallbackFor(withFm("fallback_lang: none"), "vi-VN")).toBeNull()
+    expect(fallbackFor(withFm("fallback_lang:"), "vi-VN")).toBeNull()
+  })
+
+  test("only reads fallback_lang inside the frontmatter", () => {
+    expect(fallbackFor(`${viOnly}\nfallback_lang: en-US`, "vi-VN")).toBe("vi-VN")
+  })
+
+  test("shows the fallback when the chosen language has no text", () => {
+    expect(displayLang(viOnly, "en-US", "vi-VN")).toEqual({ lang: "vi-VN", fallback: true })
+    expect(displayLang(viOnly, "vi-VN", "en-US")).toEqual({ lang: "vi-VN", fallback: false })
+  })
+
+  test("stays on the chosen language without a usable fallback", () => {
+    expect(displayLang(viOnly, "en-US", null)).toEqual({ lang: "en-US", fallback: false })
+    expect(displayLang(viOnly, "en-US", "fr-FR")).toEqual({ lang: "en-US", fallback: false })
+    expect(displayLang(withFm("fallback_lang: none"), "en-US", "vi-VN")).toEqual({ lang: "en-US", fallback: false })
+  })
+
+  test("never falls back in all mode or for a note without blocks", () => {
+    expect(displayLang(viOnly, "all", "vi-VN")).toEqual({ lang: "all", fallback: false })
+    expect(displayLang("Plain note.", "en-US", "vi-VN")).toEqual({ lang: "en-US", fallback: false })
   })
 })

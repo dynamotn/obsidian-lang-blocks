@@ -23,6 +23,8 @@ import {
 } from "obsidian"
 import {
   checkMarkers,
+  displayLang,
+  fallbackFor,
   isVisible,
   languagesIn,
   lineLangs,
@@ -33,13 +35,14 @@ import {
   sectionLang,
   skeleton,
   titleFor,
+  type Display,
   type Lang,
   type LineLang,
   type MarkerProblem,
   type Mode,
 } from "./logic"
 import { langBlocksDiagnostics, setDiagnosticsEffect, setLanguagesEffect } from "./diagnostics"
-import { langBlocksEditor, setEnabledEffect, setModeEffect, setSourceModeEffect } from "./editor"
+import { langBlocksEditor, setEnabledEffect, setFallbackEffect, setModeEffect, setSourceModeEffect } from "./editor"
 
 interface Settings {
   /** Languages to cycle through, in order. */
@@ -56,9 +59,20 @@ interface Settings {
   diagnostics: boolean
   /** Warn when a note has no text in the language shown. */
   missingNotice: boolean
+  /** Language shown when a note has no text in the one chosen; empty for none. */
+  fallback: Lang | ""
 }
 
-const DEFAULTS: Settings = { languages: ["vi-VN", "en-US"], mode: "vi-VN", localizedTitle: true, livePreview: true, sourceMode: false, diagnostics: true, missingNotice: true }
+const DEFAULTS: Settings = {
+  languages: ["vi-VN", "en-US"],
+  mode: "vi-VN",
+  localizedTitle: true,
+  livePreview: true,
+  sourceMode: false,
+  diagnostics: true,
+  missingNotice: true,
+  fallback: "vi-VN",
+}
 
 const SECTION_ATTR = "data-lang-block"
 const HIDDEN_CLASS = "lang-blocks-hidden"
@@ -69,7 +83,7 @@ export default class LangBlocksPlugin extends Plugin {
   settings: Settings = { ...DEFAULTS }
   private statusEl: HTMLElement | undefined
   /** Last parsed source, so the sections of one note share one parse. */
-  private cache: { text: string; langs: LineLang[] } | undefined
+  private cache: { text: string; langs: LineLang[]; key: string; display: Display } | undefined
 
   override async onload() {
     const saved = (await this.loadData()) as Partial<Settings> | null
@@ -81,6 +95,7 @@ export default class LangBlocksPlugin extends Plugin {
         mode: () => this.settings.mode,
         enabled: () => this.settings.livePreview,
         sourceMode: () => this.settings.sourceMode,
+        fallback: () => this.defaultFallback(),
         reveal: () => void this.setMode("all"),
       }),
     )
@@ -159,21 +174,28 @@ export default class LangBlocksPlugin extends Plugin {
     await this.setMode(nextMode(this.settings.mode, this.settings.languages))
   }
 
+  /** The default fallback language, or null when there is none. */
+  defaultFallback(): Lang | null {
+    return this.settings.fallback === "" ? null : this.settings.fallback
+  }
+
+  /** What a note with this source shows in the current mode. */
+  private display(src: string): Display {
+    return displayLang(src, this.settings.mode, this.defaultFallback())
+  }
+
   /** Show or hide every tagged section for the current mode, and update the UI. */
   apply() {
-    const mode = this.settings.mode
-    this.forEachRoot((root) => {
-      for (const el of Array.from(root.querySelectorAll<HTMLElement>(`[${SECTION_ATTR}]`))) {
-        const lang = el.getAttribute(SECTION_ATTR)
-        el.toggleClass(HIDDEN_CLASS, !isVisible(lang, mode))
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      const view = leaf.view
+      // Each note may fall back to another language, so decide per view.
+      const shown = view instanceof MarkdownView ? this.display(view.getViewData()).lang : this.settings.mode
+      for (const el of Array.from(view.containerEl.querySelectorAll<HTMLElement>(`[${SECTION_ATTR}]`))) {
+        el.toggleClass(HIDDEN_CLASS, !isVisible(el.getAttribute(SECTION_ATTR), shown))
       }
     })
     this.refreshViews()
     this.dispatchToEditors()
-    if (this.statusEl) {
-      this.statusEl.setText(modeLabel(mode))
-      this.statusEl.setAttribute("title", mode === "all" ? "Showing every language" : `Showing ${mode}`)
-    }
   }
 
   /** Tell every open editor about the current mode and whether folding is on. */
@@ -182,6 +204,7 @@ export default class LangBlocksPlugin extends Plugin {
       setModeEffect.of(this.settings.mode),
       setEnabledEffect.of(this.settings.livePreview),
       setSourceModeEffect.of(this.settings.sourceMode),
+      setFallbackEffect.of(this.defaultFallback()),
       setDiagnosticsEffect.of(this.settings.diagnostics),
       setLanguagesEffect.of(this.settings.languages),
     ]
@@ -236,11 +259,14 @@ export default class LangBlocksPlugin extends Plugin {
     // leave them untouched, so nothing is hidden by mistake.
     const info = ctx.getSectionInfo(el)
     if (!info) return
-    if (this.cache?.text !== info.text) this.cache = { text: info.text, langs: lineLangs(info.text) }
+    const key = `${this.settings.mode}\u0000${this.settings.fallback}`
+    if (this.cache?.text !== info.text || this.cache.key !== key) {
+      this.cache = { text: info.text, langs: lineLangs(info.text), key, display: this.display(info.text) }
+    }
     const lang = sectionLang(this.cache.langs, info.lineStart, info.lineEnd)
     if (lang === null) return
     el.setAttribute(SECTION_ATTR, lang)
-    el.toggleClass(HIDDEN_CLASS, !isVisible(lang, this.settings.mode))
+    el.toggleClass(HIDDEN_CLASS, !isVisible(lang, this.cache.display.lang))
   }
 
   /** Bring titles, notices and the status bar in line with the open notes. */
@@ -257,14 +283,20 @@ export default class LangBlocksPlugin extends Plugin {
       const view = leaf.view
       if (!(view instanceof MarkdownView)) continue
       const existing = view.contentEl.querySelector<HTMLElement>(`:scope > .${NOTICE_CLASS}`)
-      if (!this.settings.missingNotice || !missingTranslation(view.getViewData(), mode)) {
+      const src = view.getViewData()
+      if (!this.settings.missingNotice || !missingTranslation(src, mode)) {
         existing?.remove()
         continue
       }
       const notice = existing ?? createDiv({ cls: NOTICE_CLASS })
       if (!existing) view.contentEl.prepend(notice)
       notice.empty()
-      notice.appendText(`This note has no ${mode} text yet. `)
+      const display = this.display(src)
+      notice.appendText(
+        display.fallback
+          ? `This note has no ${mode} text yet; showing ${display.lang} instead. `
+          : `This note has no ${mode} text yet. `,
+      )
       const link = notice.createEl("a", { text: "Show every language", href: "#" })
       link.addEventListener("click", (event) => {
         event.preventDefault()
@@ -273,11 +305,25 @@ export default class LangBlocksPlugin extends Plugin {
     }
   }
 
-  /** Show the status bar switch only for a note that has language blocks. */
+  /**
+   * Show the status bar switch only for a note that has language blocks, with
+   * an arrow to the fallback when the note shows it (`EN→VI`).
+   */
   refreshStatus() {
+    if (!this.statusEl) return
+    const mode = this.settings.mode
     const view = this.app.workspace.getActiveViewOfType(MarkdownView)
-    const hasBlocks = view !== null && languagesIn(lineLangs(view.getViewData())).length > 0
-    this.statusEl?.toggle(hasBlocks)
+    const src = view?.getViewData() ?? ""
+    const hasBlocks = view !== null && languagesIn(lineLangs(src)).length > 0
+    this.statusEl.toggle(hasBlocks)
+    const display = this.display(src)
+    if (display.fallback) {
+      this.statusEl.setText(`${modeLabel(mode)}→${modeLabel(display.lang)}`)
+      this.statusEl.setAttribute("title", `No ${mode} text in this note; showing ${display.lang}`)
+    } else {
+      this.statusEl.setText(modeLabel(mode))
+      this.statusEl.setAttribute("title", mode === "all" ? "Showing every language" : `Showing ${mode}`)
+    }
   }
 
   /** Show the per-language `title` frontmatter entry as the inline title in reading mode. */
@@ -288,7 +334,12 @@ export default class LangBlocksPlugin extends Plugin {
       const titleEl = view.containerEl.querySelector<HTMLElement>(".markdown-reading-view .inline-title")
       if (!titleEl) continue
       const fm = view.file ? this.app.metadataCache.getFileCache(view.file)?.frontmatter : undefined
-      const title = this.settings.localizedTitle ? titleFor(fm?.title, this.settings.mode) : null
+      const mode = this.settings.mode
+      // The title of the language shown, else the one of the note's fallback.
+      const fallback = mode === "all" ? null : fallbackFor(view.getViewData(), this.defaultFallback())
+      const title = this.settings.localizedTitle
+        ? (titleFor(fm?.title, mode) ?? (fallback ? titleFor(fm?.title, fallback) : null))
+        : null
       if (title === null) titleEl.removeAttribute(TITLE_ATTR)
       else titleEl.setAttribute(TITLE_ATTR, title)
     }
@@ -362,6 +413,28 @@ class LangBlocksSettingTab extends PluginSettingTab {
             this.plugin.settings.languages = languages
             const mode = this.plugin.settings.mode
             if (mode !== "all" && !languages.includes(mode)) this.plugin.settings.mode = languages[0] ?? "all"
+            await this.plugin.saveSettings()
+            this.plugin.apply()
+          }),
+      )
+
+    const fallbackOptions: Record<string, string> = { "": "None" }
+    for (const lang of this.plugin.settings.languages) fallbackOptions[lang] = lang
+    if (this.plugin.settings.fallback !== "") {
+      fallbackOptions[this.plugin.settings.fallback] = this.plugin.settings.fallback
+    }
+    new Setting(containerEl)
+      .setName("Fallback language")
+      .setDesc(
+        "Shown when a note has no text in the language chosen, instead of only its shared text. " +
+          "A note overrides it with fallback_lang in its frontmatter, or turns it off with fallback_lang: none.",
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOptions(fallbackOptions)
+          .setValue(this.plugin.settings.fallback)
+          .onChange(async (value) => {
+            this.plugin.settings.fallback = value
             await this.plugin.saveSettings()
             this.plugin.apply()
           }),

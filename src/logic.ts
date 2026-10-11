@@ -221,6 +221,45 @@ export function missingTranslation(src: string, mode: Mode): boolean {
   return !textLanguages(src).includes(mode)
 }
 
+/**
+ * The fallback language of a note: its `fallback_lang` frontmatter entry when
+ * present (the PolyglotMarkdown name), else `defaultFallback`. An empty value
+ * or `none` turns the fallback off for that note.
+ */
+export function fallbackFor(src: string, defaultFallback: Lang | null): Lang | null {
+  const lines = src.split("\n")
+  if (lines[0]?.trim() !== "---") return defaultFallback
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i] ?? ""
+    if (line.trim() === "---") break
+    const m = line.match(/^fallback_lang:\s*(.*?)\s*$/)
+    if (!m) continue
+    const value = (m[1] ?? "").replace(/^["']|["']$/g, "").trim()
+    return value === "" || value.toLowerCase() === "none" ? null : value
+  }
+  return defaultFallback
+}
+
+/** What a note shows for a mode: the language, and whether it is the fallback. */
+export interface Display {
+  lang: Mode
+  fallback: boolean
+}
+
+/**
+ * The language a note actually shows in `mode`. A note without text in that
+ * language shows its fallback language instead, when it has text there; else
+ * it stays on `mode` and shows only its shared text.
+ */
+export function displayLang(src: string, mode: Mode, defaultFallback: Lang | null): Display {
+  if (mode === "all" || languagesIn(lineLangs(src)).length === 0) return { lang: mode, fallback: false }
+  const texts = textLanguages(src)
+  if (texts.includes(mode)) return { lang: mode, fallback: false }
+  const fallback = fallbackFor(src, defaultFallback)
+  if (fallback !== null && fallback !== mode && texts.includes(fallback)) return { lang: fallback, fallback: true }
+  return { lang: mode, fallback: false }
+}
+
 /** The languages a note has blocks for, in order of first appearance. */
 export function languagesIn(langs: LineLang[]): Lang[] {
   const seen: Lang[] = []

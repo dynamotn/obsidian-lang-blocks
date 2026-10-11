@@ -42,9 +42,15 @@ reads the same in Obsidian as on the published garden.
   you never edit text you can't see. Source mode shows everything unless
   *Fold in source mode too* is on.
 
+- **Fallback language**: a note with no text in the language chosen shows
+  the blocks of its fallback language instead, with `EN→VI` in the status bar.
+  The default comes from the settings; a note sets its own with `fallback_lang`
+  in its frontmatter (the name PolyglotMarkdown uses), or turns it off with
+  `fallback_lang: none`. Live Preview folds the same way, and the inline title
+  falls back too when the chosen language has no `title` entry.
 - **Missing translations**: a note with language blocks but no text in the
-  language shown gets a line at the top saying so, with a link to show every
-  language. Headings, comments and empty list items such as `- [ ]` don't count
+  language shown gets a line at the top saying so, naming the fallback it shows
+  instead, with a link to show every language. Headings, comments and empty list items such as `- [ ]` don't count
   as text, so a block a template filled with headings still counts as missing.
 - **Insert language blocks** (command, or the editor's right-click menu) adds a
   block per configured language at the cursor, with the cursor in the block of
@@ -64,6 +70,7 @@ that are already rendered, and Live Preview only changes editor decorations.
 
 - **Languages**: the tags used in your markers, in the order the status bar
   cycles through them. Default `vi-VN, en-US`.
+- **Fallback language**: the first configured language by default, or *None*.
 - **Localized inline title**: on by default.
 - **Fold other languages in Live Preview**: on by default.
 - **Warn about missing translations**: on by default.

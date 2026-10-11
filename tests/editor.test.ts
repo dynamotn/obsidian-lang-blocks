@@ -6,7 +6,9 @@ import { EditorView, type DecorationSet } from "@codemirror/view"
 // editor extension reads, whether the editor is in Live Preview.
 const livePreview = StateField.define<boolean>({ create: () => true, update: (v) => v })
 mock.module("obsidian", () => ({ editorLivePreviewField: livePreview }))
-const { langBlocksEditor, setEnabledEffect, setModeEffect, setSourceModeEffect } = await import("../src/editor")
+const { langBlocksEditor, setEnabledEffect, setFallbackEffect, setModeEffect, setSourceModeEffect } = await import(
+  "../src/editor"
+)
 
 const doc = [
   "# Title", //               line 1
@@ -20,7 +22,15 @@ const doc = [
 ].join("\n")
 
 function stateWith(
-  opts: { mode?: string; live?: boolean; cursorLine?: number; enabled?: boolean; sourceMode?: boolean } = {},
+  opts: {
+    mode?: string
+    live?: boolean
+    cursorLine?: number
+    enabled?: boolean
+    sourceMode?: boolean
+    fallback?: string | null
+    text?: string
+  } = {},
 ) {
   const extensions: Extension[] = [
     opts.live === false ? livePreview.init(() => false) : livePreview,
@@ -28,10 +38,11 @@ function stateWith(
       mode: () => opts.mode ?? "vi-VN",
       enabled: () => opts.enabled ?? true,
       sourceMode: () => opts.sourceMode ?? false,
+      fallback: () => (opts.fallback === undefined ? null : opts.fallback),
       reveal: () => {},
     }),
   ]
-  let state = EditorState.create({ doc, extensions })
+  let state = EditorState.create({ doc: opts.text ?? doc, extensions })
   const line = state.doc.line(opts.cursorLine ?? 1)
   state = state.update({ selection: EditorSelection.cursor(line.from) }).state
   return state
@@ -82,6 +93,23 @@ describe("Live Preview folding", () => {
     state = state.update({ effects: setSourceModeEffect.of(true) }).state
     expect(folded(state)).toEqual([[4, 6]])
     expect(folded(stateWith({ live: false, sourceMode: true, enabled: false }))).toEqual([])
+  })
+
+  test("folds to the fallback language when the shown one has no text", () => {
+    const untranslated = [
+      "<!--lang:vi-VN-->", //  line 1
+      "Đã viết.", //           line 2
+      "<!--lang:en-US-->", //  line 3
+      "## Goals", //           line 4: a heading alone isn't text
+      "<!--lang:*-->", //      line 5
+    ].join("\n")
+    // No fallback: the empty English block shows, Vietnamese folds.
+    expect(folded(stateWith({ mode: "en-US", text: untranslated, cursorLine: 5 }))).toEqual([[1, 2]])
+    // Fallback to Vietnamese: the English block folds instead.
+    let state = stateWith({ mode: "en-US", text: untranslated, cursorLine: 5, fallback: "vi-VN" })
+    expect(folded(state)).toEqual([[3, 4]])
+    state = state.update({ effects: setFallbackEffect.of(null) }).state
+    expect(folded(state)).toEqual([[1, 2]])
   })
 
   test("refolds after an edit", () => {

@@ -7,7 +7,7 @@
 import { RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view"
 import { editorLivePreviewField } from "obsidian"
-import { hiddenRuns, lineLangs, type Lang, type Mode } from "./logic"
+import { displayLang, hiddenRuns, lineLangs, type Lang, type Mode } from "./logic"
 
 /** Sent to every editor when the language shown changes. */
 export const setModeEffect = StateEffect.define<Mode>()
@@ -18,6 +18,9 @@ export const setEnabledEffect = StateEffect.define<boolean>()
 /** Sent to every editor when source mode folding is turned on or off. */
 export const setSourceModeEffect = StateEffect.define<boolean>()
 
+/** Sent to every editor when the default fallback language changes. */
+export const setFallbackEffect = StateEffect.define<Lang | null>()
+
 interface Options {
   /** The language shown when an editor opens. */
   mode: () => Mode
@@ -25,6 +28,8 @@ interface Options {
   enabled: () => boolean
   /** Whether source mode folds too when an editor opens. */
   sourceMode: () => boolean
+  /** The default fallback language when an editor opens. */
+  fallback: () => Lang | null
   /** Called when the reader clicks a placeholder. */
   reveal: () => void
 }
@@ -33,6 +38,7 @@ interface FoldState {
   mode: Mode
   enabled: boolean
   sourceMode: boolean
+  fallback: Lang | null
   decorations: DecorationSet
 }
 
@@ -70,8 +76,11 @@ function build(state: EditorState, fold: Omit<FoldState, "decorations">, reveal:
   if (!fold.enabled || fold.mode === "all") return Decoration.none
   if (!fold.sourceMode && !state.field(editorLivePreviewField, false)) return Decoration.none
   const doc = state.doc
+  const src = doc.toString()
+  // A note without text in the language shown folds to its fallback instead.
+  const shown = displayLang(src, fold.mode, fold.fallback).lang
   const builder = new RangeSetBuilder<Decoration>()
-  for (const run of hiddenRuns(lineLangs(doc.toString()), fold.mode)) {
+  for (const run of hiddenRuns(lineLangs(src), shown)) {
     const from = doc.line(run.start + 1).from
     const to = doc.line(run.end + 1).to
     if (state.selection.ranges.some((r) => r.from <= to && r.to >= from)) continue
@@ -84,15 +93,21 @@ function build(state: EditorState, fold: Omit<FoldState, "decorations">, reveal:
 export function langBlocksEditor(options: Options): Extension {
   const field = StateField.define<FoldState>({
     create(state) {
-      const fold = { mode: options.mode(), enabled: options.enabled(), sourceMode: options.sourceMode() }
+      const fold = {
+        mode: options.mode(),
+        enabled: options.enabled(),
+        sourceMode: options.sourceMode(),
+        fallback: options.fallback(),
+      }
       return { ...fold, decorations: build(state, fold, options.reveal) }
     },
     update(value, tr) {
-      let { mode, enabled, sourceMode } = value
+      let { mode, enabled, sourceMode, fallback } = value
       for (const effect of tr.effects) {
         if (effect.is(setModeEffect)) mode = effect.value
         if (effect.is(setEnabledEffect)) enabled = effect.value
         if (effect.is(setSourceModeEffect)) sourceMode = effect.value
+        if (effect.is(setFallbackEffect)) fallback = effect.value
       }
       const livePreviewChanged =
         tr.startState.field(editorLivePreviewField, false) !== tr.state.field(editorLivePreviewField, false)
@@ -100,13 +115,14 @@ export function langBlocksEditor(options: Options): Extension {
         mode === value.mode &&
         enabled === value.enabled &&
         sourceMode === value.sourceMode &&
+        fallback === value.fallback &&
         !tr.docChanged &&
         !tr.selection &&
         !livePreviewChanged
       ) {
         return value
       }
-      const fold = { mode, enabled, sourceMode }
+      const fold = { mode, enabled, sourceMode, fallback }
       return { ...fold, decorations: build(tr.state, fold, options.reveal) }
     },
     provide: (f) => [
