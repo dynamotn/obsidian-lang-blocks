@@ -1,0 +1,9 @@
+{
+  "id": "lang-blocks",
+  "name": "Lang Blocks",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.7",
+  "description": "Show one language at a time in reading mode for notes written with <!--lang:xx--> blocks.",
+  "author": "Trần Đức Nam",
+  "isDesktopOnly": false
+}

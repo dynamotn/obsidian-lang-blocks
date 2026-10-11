@@ -1,0 +1,28 @@
+/* Sections of a language that isn't shown. */
+.lang-blocks-hidden {
+  display: none !important;
+}
+
+/* Per-language inline title in reading mode: hide the file name, show the title. */
+.markdown-reading-view .inline-title[data-lang-title] {
+  font-size: 0;
+}
+
+.markdown-reading-view .inline-title[data-lang-title]::before {
+  content: attr(data-lang-title);
+  font-size: var(--inline-title-size);
+}
+
+/* Live Preview placeholder for the folded blocks of another language. */
+.lang-blocks-fold {
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  padding: 2px 0 2px var(--size-4-2);
+  border-left: 2px solid var(--background-modifier-border);
+}
+
+.lang-blocks-fold:hover {
+  color: var(--text-muted);
+  border-left-color: var(--interactive-accent);
+}
