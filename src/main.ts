@@ -12,6 +12,7 @@ import {
   type Editor,
   MarkdownView,
   Modal,
+  debounce,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -23,7 +24,9 @@ import {
 import {
   checkMarkers,
   isVisible,
+  languagesIn,
   lineLangs,
+  missingTranslation,
   modeLabel,
   nextMode,
   parseLanguages,
@@ -51,13 +54,16 @@ interface Settings {
   sourceMode: boolean
   /** Highlight marker lines that probably don't do what was meant. */
   diagnostics: boolean
+  /** Warn when a note has no text in the language shown. */
+  missingNotice: boolean
 }
 
-const DEFAULTS: Settings = { languages: ["vi-VN", "en-US"], mode: "vi-VN", localizedTitle: true, livePreview: true, sourceMode: false, diagnostics: true }
+const DEFAULTS: Settings = { languages: ["vi-VN", "en-US"], mode: "vi-VN", localizedTitle: true, livePreview: true, sourceMode: false, diagnostics: true, missingNotice: true }
 
 const SECTION_ATTR = "data-lang-block"
 const HIDDEN_CLASS = "lang-blocks-hidden"
 const TITLE_ATTR = "data-lang-title"
+const NOTICE_CLASS = "lang-blocks-missing"
 
 export default class LangBlocksPlugin extends Plugin {
   settings: Settings = { ...DEFAULTS }
@@ -119,9 +125,12 @@ export default class LangBlocksPlugin extends Plugin {
 
     this.addSettingTab(new LangBlocksSettingTab(this.app, this))
 
-    this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshTitles()))
-    this.registerEvent(this.app.workspace.on("file-open", () => this.refreshTitles()))
-    this.registerEvent(this.app.metadataCache.on("changed", () => this.refreshTitles()))
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshViews()))
+    this.registerEvent(this.app.workspace.on("file-open", () => this.refreshViews()))
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.refreshViews()))
+    this.registerEvent(this.app.metadataCache.on("changed", () => this.refreshViews()))
+    const onEdit = debounce(() => this.refreshViews(), 300, true)
+    this.registerEvent(this.app.workspace.on("editor-change", () => onEdit()))
     this.app.workspace.onLayoutReady(() => this.apply())
   }
 
@@ -132,6 +141,7 @@ export default class LangBlocksPlugin extends Plugin {
         el.removeAttribute(SECTION_ATTR)
       }
       for (const el of Array.from(root.querySelectorAll(`[${TITLE_ATTR}]`))) el.removeAttribute(TITLE_ATTR)
+      for (const el of Array.from(root.querySelectorAll(`.${NOTICE_CLASS}`))) el.remove()
     })
   }
 
@@ -158,7 +168,7 @@ export default class LangBlocksPlugin extends Plugin {
         el.toggleClass(HIDDEN_CLASS, !isVisible(lang, mode))
       }
     })
-    this.refreshTitles()
+    this.refreshViews()
     this.dispatchToEditors()
     if (this.statusEl) {
       this.statusEl.setText(modeLabel(mode))
@@ -231,6 +241,43 @@ export default class LangBlocksPlugin extends Plugin {
     if (lang === null) return
     el.setAttribute(SECTION_ATTR, lang)
     el.toggleClass(HIDDEN_CLASS, !isVisible(lang, this.settings.mode))
+  }
+
+  /** Bring titles, notices and the status bar in line with the open notes. */
+  refreshViews() {
+    this.refreshTitles()
+    this.refreshNotices()
+    this.refreshStatus()
+  }
+
+  /** Warn at the top of every open note that has no text in the language shown. */
+  refreshNotices() {
+    const mode = this.settings.mode
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const view = leaf.view
+      if (!(view instanceof MarkdownView)) continue
+      const existing = view.contentEl.querySelector<HTMLElement>(`:scope > .${NOTICE_CLASS}`)
+      if (!this.settings.missingNotice || !missingTranslation(view.getViewData(), mode)) {
+        existing?.remove()
+        continue
+      }
+      const notice = existing ?? createDiv({ cls: NOTICE_CLASS })
+      if (!existing) view.contentEl.prepend(notice)
+      notice.empty()
+      notice.appendText(`This note has no ${mode} text yet. `)
+      const link = notice.createEl("a", { text: "Show every language", href: "#" })
+      link.addEventListener("click", (event) => {
+        event.preventDefault()
+        void this.setMode("all")
+      })
+    }
+  }
+
+  /** Show the status bar switch only for a note that has language blocks. */
+  refreshStatus() {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView)
+    const hasBlocks = view !== null && languagesIn(lineLangs(view.getViewData())).length > 0
+    this.statusEl?.toggle(hasBlocks)
   }
 
   /** Show the per-language `title` frontmatter entry as the inline title in reading mode. */
@@ -342,6 +389,20 @@ class LangBlocksSettingTab extends PluginSettingTab {
           this.plugin.settings.livePreview = value
           await this.plugin.saveSettings()
           this.plugin.dispatchToEditors()
+        }),
+      )
+
+    new Setting(containerEl)
+      .setName("Warn about missing translations")
+      .setDesc(
+        "Show a line at the top of a note that has language blocks but no text in the language shown. " +
+          "Headings, comments and empty list items alone don't count as text.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.missingNotice).onChange(async (value) => {
+          this.plugin.settings.missingNotice = value
+          await this.plugin.saveSettings()
+          this.plugin.refreshNotices()
         }),
       )
 

@@ -5,11 +5,13 @@ import {
   isVisible,
   languagesIn,
   lineLangs,
+  missingTranslation,
   modeLabel,
   nextMode,
   parseLanguages,
   sectionLang,
   skeleton,
+  textLanguages,
   titleFor,
   type LineLang,
 } from "../src/logic"
@@ -255,5 +257,48 @@ describe("skeleton", () => {
   test("never produces a marker problem", () => {
     const { lines } = skeleton(languages, "vi-VN", "a `code` line")
     expect(checkMarkers(lines.join("\n"), languages)).toEqual([])
+  })
+})
+
+describe("translations", () => {
+  const filled = ["<!--lang:vi-VN-->", "## Mục tiêu", "Tiết kiệm.", "<!--lang:en-US-->", "## Goals", "Save.", "<!--lang:*-->"]
+
+  test("lists the languages whose blocks hold real text", () => {
+    expect(textLanguages(filled.join("\n"))).toEqual(["vi-VN", "en-US"])
+  })
+
+  test("doesn't count headings, comments or empty list items as text", () => {
+    const src = [
+      "<!--lang:vi-VN-->",
+      "Đã viết.",
+      "<!--lang:en-US-->",
+      "## Goals",
+      "",
+      "<!--",
+      "Rapid log key: a long comment",
+      "-->",
+      "<!-- one-line comment -->",
+      "- [ ]",
+      "-",
+      "1.",
+      "<!--lang:*-->",
+      "Shared text doesn't count for any language.",
+    ].join("\n")
+    expect(textLanguages(src)).toEqual(["vi-VN"])
+    expect(missingTranslation(src, "en-US")).toBe(true)
+    expect(missingTranslation(src, "vi-VN")).toBe(false)
+  })
+
+  test("counts a filled task or list item as text", () => {
+    expect(textLanguages("<!--lang:en-US-->\n- [ ] Call the bank\n<!--lang:*-->")).toEqual(["en-US"])
+  })
+
+  test("never reports a note without blocks or in all mode", () => {
+    expect(missingTranslation("Just a note.", "vi-VN")).toBe(false)
+    expect(missingTranslation("<!--lang:en-US-->\n## Empty\n<!--lang:*-->", "all")).toBe(false)
+  })
+
+  test("reports a language the note has no block for", () => {
+    expect(missingTranslation(filled.join("\n"), "fr-FR")).toBe(true)
   })
 })

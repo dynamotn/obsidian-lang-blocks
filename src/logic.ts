@@ -183,6 +183,44 @@ export function skeleton(languages: Lang[], primary: Lang, body?: string): Skele
   return { lines, cursorLine }
 }
 
+/**
+ * The languages whose blocks hold real text, in order of first appearance.
+ * Blank lines, headings, HTML comments (even over several lines) and empty
+ * list items such as `-` or `- [ ]` don't count, so a block a template filled
+ * with headings is still untranslated.
+ */
+export function textLanguages(src: string): Lang[] {
+  const langs = lineLangs(src)
+  const found: Lang[] = []
+  let inComment = false
+  src.split("\n").forEach((raw, i) => {
+    const line = raw.trim()
+    if (inComment) {
+      if (line.includes("-->")) inComment = false
+      return
+    }
+    if (line.startsWith("<!--")) {
+      if (!line.includes("-->")) inComment = true
+      return
+    }
+    const l = langs[i]
+    if (l?.kind !== "lang" || found.includes(l.lang)) return
+    if (line === "" || /^#{1,6}(\s|$)/.test(line) || /^([-*+]|\d+[.)])(\s+\[.\])?$/.test(line)) return
+    found.push(l.lang)
+  })
+  return found
+}
+
+/**
+ * Whether a note lacks text in the language shown: it has language blocks,
+ * but none of the shown language holds real text. Never true in "all" mode or
+ * for a note without blocks.
+ */
+export function missingTranslation(src: string, mode: Mode): boolean {
+  if (mode === "all" || languagesIn(lineLangs(src)).length === 0) return false
+  return !textLanguages(src).includes(mode)
+}
+
 /** The languages a note has blocks for, in order of first appearance. */
 export function languagesIn(langs: LineLang[]): Lang[] {
   const seen: Lang[] = []

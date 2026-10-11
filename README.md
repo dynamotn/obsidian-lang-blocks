@@ -22,8 +22,9 @@ reads the same in Obsidian as on the published garden.
 
 ## Use
 
-- **The status bar** shows the language in view (`VI`, `EN` or `ALL`). Click it
-  to switch to the next language, and after the last one to every language.
+- **The status bar** shows the language in view (`VI`, `EN` or `ALL`) when the
+  active note has language blocks. Click it to switch to the next language, and
+  after the last one to every language.
 - **Commands**: *Switch to the next language*, *Show every language*, and
   *Show xx only* for each configured language.
 - **Localized inline title**: in reading mode, a note with a per-language
@@ -41,6 +42,10 @@ reads the same in Obsidian as on the published garden.
   you never edit text you can't see. Source mode shows everything unless
   *Fold in source mode too* is on.
 
+- **Missing translations**: a note with language blocks but no text in the
+  language shown gets a line at the top saying so, with a link to show every
+  language. Headings, comments and empty list items such as `- [ ]` don't count
+  as text, so a block a template filled with headings still counts as missing.
 - **Insert language blocks** (command, or the editor's right-click menu) adds a
   block per configured language at the cursor, with the cursor in the block of
   the language shown. With text selected, it wraps the selection into that
@@ -61,6 +66,7 @@ that are already rendered, and Live Preview only changes editor decorations.
   cycles through them. Default `vi-VN, en-US`.
 - **Localized inline title**: on by default.
 - **Fold other languages in Live Preview**: on by default.
+- **Warn about missing translations**: on by default.
 - **Highlight marker problems**: on by default.
 - **Fold in source mode too**: off by default. Line numbers skip the folded
   lines.
