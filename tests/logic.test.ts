@@ -9,6 +9,7 @@ import {
   nextMode,
   parseLanguages,
   sectionLang,
+  skeleton,
   titleFor,
   type LineLang,
 } from "../src/logic"
@@ -212,5 +213,47 @@ describe("checkMarkers", () => {
       [0, "unknown"],
       [0, "unclosed"],
     ])
+  })
+})
+
+describe("skeleton", () => {
+  const languages = ["vi-VN", "en-US"]
+
+  test("inserts empty blocks with the cursor in the primary language", () => {
+    expect(skeleton(languages, "vi-VN")).toEqual({
+      lines: ["<!--lang:vi-VN-->", "", "<!--lang:en-US-->", "", "<!--lang:*-->"],
+      cursorLine: 1,
+    })
+    expect(skeleton(languages, "en-US").cursorLine).toBe(3)
+  })
+
+  test("wraps a body into the primary block, cursor in the next block", () => {
+    expect(skeleton(languages, "vi-VN", "Dòng 1\nDòng 2")).toEqual({
+      lines: ["<!--lang:vi-VN-->", "Dòng 1", "Dòng 2", "<!--lang:en-US-->", "", "<!--lang:*-->"],
+      cursorLine: 4,
+    })
+  })
+
+  test("puts the cursor in the first other block even when it comes first", () => {
+    expect(skeleton(languages, "en-US", "Hello")).toEqual({
+      lines: ["<!--lang:vi-VN-->", "", "<!--lang:en-US-->", "Hello", "<!--lang:*-->"],
+      cursorLine: 1,
+    })
+  })
+
+  test("adds a primary language missing from the list in front", () => {
+    expect(skeleton(languages, "fr-FR").lines[0]).toBe("<!--lang:fr-FR-->")
+  })
+
+  test("leaves the cursor after the body when there is no other language", () => {
+    expect(skeleton(["vi-VN"], "vi-VN", "x")).toEqual({
+      lines: ["<!--lang:vi-VN-->", "x", "<!--lang:*-->"],
+      cursorLine: 1,
+    })
+  })
+
+  test("never produces a marker problem", () => {
+    const { lines } = skeleton(languages, "vi-VN", "a `code` line")
+    expect(checkMarkers(lines.join("\n"), languages)).toEqual([])
   })
 })

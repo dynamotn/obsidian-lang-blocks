@@ -41,6 +41,11 @@ reads the same in Obsidian as on the published garden.
   you never edit text you can't see. Source mode shows everything unless
   *Fold in source mode too* is on.
 
+- **Insert language blocks** (command, or the editor's right-click menu) adds a
+  block per configured language at the cursor, with the cursor in the block of
+  the language shown. With text selected, it wraps the selection into that
+  block and moves the cursor to the first other block, ready for the
+  translation. Markers always get lines of their own.
 - **Marker problems** are highlighted in the editor, with the reason on hover:
   a marker sharing its line with other text (it still switches the block), a
   language that isn't configured (often a typo such as `vi-vn`), or a block

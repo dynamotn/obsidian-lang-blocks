@@ -9,6 +9,7 @@
  */
 import type { EditorView } from "@codemirror/view"
 import {
+  type Editor,
   MarkdownView,
   Modal,
   Notice,
@@ -27,6 +28,7 @@ import {
   nextMode,
   parseLanguages,
   sectionLang,
+  skeleton,
   titleFor,
   type Lang,
   type LineLang,
@@ -90,6 +92,22 @@ export default class LangBlocksPlugin extends Plugin {
 
     this.addCommand({ id: "cycle", name: "Switch to the next language", callback: () => void this.cycle() })
     this.addCommand({ id: "show-all", name: "Show every language", callback: () => void this.setMode("all") })
+    this.addCommand({
+      id: "insert-blocks",
+      name: "Insert language blocks (wraps the selection)",
+      editorCallback: (editor) => this.insertBlocks(editor),
+    })
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor) => {
+        const wrap = editor.somethingSelected()
+        menu.addItem((item) =>
+          item
+            .setTitle(wrap ? "Wrap in language blocks" : "Insert language blocks")
+            .setIcon("languages")
+            .onClick(() => this.insertBlocks(editor)),
+        )
+      }),
+    )
     this.addCommand({
       id: "check-vault",
       name: "Check language markers in every note",
@@ -164,6 +182,25 @@ export default class LangBlocksPlugin extends Plugin {
       const cm = (view.editor as unknown as { cm?: EditorView }).cm
       cm?.dispatch({ effects })
     }
+  }
+
+  /**
+   * Insert a block per configured language at the cursor, or wrap the
+   * selection into the block of the language shown. Markers always get lines
+   * of their own.
+   */
+  insertBlocks(editor: Editor) {
+    const languages = this.settings.languages
+    const mode = this.settings.mode
+    const primary = mode === "all" ? (languages[0] ?? "en-US") : mode
+    const from = editor.getCursor("from")
+    const to = editor.getCursor("to")
+    const body = editor.somethingSelected() ? editor.getRange(from, to) : undefined
+    const { lines, cursorLine } = skeleton(languages, primary, body)
+    const before = from.ch > 0 ? "\n" : ""
+    const after = to.ch < editor.getLine(to.line).length ? "\n" : ""
+    editor.replaceRange(before + lines.join("\n") + after, from, to)
+    editor.setCursor({ line: from.line + (before ? 1 : 0) + cursorLine, ch: 0 })
   }
 
   /** Check the markers of every note and list the problems found. */

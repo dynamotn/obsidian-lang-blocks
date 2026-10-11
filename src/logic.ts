@@ -151,6 +151,38 @@ export function checkMarkers(src: string, languages: Lang[]): MarkerProblem[] {
   return problems.sort((a, b) => a.line - b.line)
 }
 
+/** Lines to insert for a set of language blocks, and where to put the cursor. */
+export interface Skeleton {
+  lines: string[]
+  /** Index in `lines` of the line the cursor goes to. */
+  cursorLine: number
+}
+
+/**
+ * A block per language in `languages` order, closed by `<!--lang:*-->`.
+ * Without `body`, every block is empty and the cursor goes into the block of
+ * `primary`. With `body`, the text goes into the block of `primary` and the
+ * cursor into the first other block, ready for the translation.
+ */
+export function skeleton(languages: Lang[], primary: Lang, body?: string): Skeleton {
+  const langs = languages.includes(primary) ? languages : [primary, ...languages]
+  const lines: string[] = []
+  let cursorLine = -1
+  for (const lang of langs) {
+    lines.push(`<!--lang:${lang}-->`)
+    if (body !== undefined && lang === primary) {
+      lines.push(...body.split("\n"))
+    } else {
+      if (cursorLine === -1 && (body !== undefined || lang === primary)) cursorLine = lines.length
+      lines.push("")
+    }
+  }
+  lines.push("<!--lang:*-->")
+  // Only the primary language configured and a body given: stay after the body.
+  if (cursorLine === -1) cursorLine = lines.length - 2
+  return { lines, cursorLine }
+}
+
 /** The languages a note has blocks for, in order of first appearance. */
 export function languagesIn(langs: LineLang[]): Lang[] {
   const seen: Lang[] = []
