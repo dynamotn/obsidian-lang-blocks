@@ -1,6 +1,6 @@
 {
   "name": "obsidian-lang-blocks",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Show one language at a time in Obsidian reading mode for notes written with <!--lang:xx--> blocks",
   "type": "module",

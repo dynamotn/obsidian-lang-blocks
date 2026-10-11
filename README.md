@@ -92,13 +92,31 @@ that are already rendered, and Live Preview only changes editor decorations.
 
 ## Install
 
-Until it's in the community directory:
+Until it's in the community directory, install it with
+[BRAT](https://github.com/TfTHacker/obsidian42-brat): *Add beta plugin* →
+`dynamotn/obsidian-lang-blocks`. BRAT installs the latest release and keeps it
+up to date.
+
+Or build it yourself:
 
 1. Build it: `bun install && bun run build`.
 2. Copy `main.js`, `manifest.json` and `styles.css` into
    `<your vault>/.obsidian/plugins/lang-blocks/`, or symlink this folder there
    while developing.
 3. Enable **Lang Blocks** under Settings → Community plugins.
+
+## Release
+
+Releases are built by GitHub Actions. Set the same version in `manifest.json`
+and `package.json`, commit, then push a tag equal to it, with no `v` prefix:
+
+```sh
+git tag 0.2.0 && git push origin 0.2.0
+```
+
+The *Release* workflow checks that the tag matches both files, runs the tests,
+builds, and publishes `main.js`, `manifest.json` and `styles.css` as the
+release that BRAT installs.
 
 ## Develop
 
