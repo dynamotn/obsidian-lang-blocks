@@ -28,7 +28,7 @@ import {
   type LineLang,
   type Mode,
 } from "./logic"
-import { langBlocksEditor, setEnabledEffect, setModeEffect } from "./editor"
+import { langBlocksEditor, setEnabledEffect, setModeEffect, setSourceModeEffect } from "./editor"
 
 interface Settings {
   /** Languages to cycle through, in order. */
@@ -39,9 +39,11 @@ interface Settings {
   localizedTitle: boolean
   /** Fold the blocks of the other languages in Live Preview. */
   livePreview: boolean
+  /** Fold them in source mode too. */
+  sourceMode: boolean
 }
 
-const DEFAULTS: Settings = { languages: ["vi-VN", "en-US"], mode: "vi-VN", localizedTitle: true, livePreview: true }
+const DEFAULTS: Settings = { languages: ["vi-VN", "en-US"], mode: "vi-VN", localizedTitle: true, livePreview: true, sourceMode: false }
 
 const SECTION_ATTR = "data-lang-block"
 const HIDDEN_CLASS = "lang-blocks-hidden"
@@ -62,6 +64,7 @@ export default class LangBlocksPlugin extends Plugin {
       langBlocksEditor({
         mode: () => this.settings.mode,
         enabled: () => this.settings.livePreview,
+        sourceMode: () => this.settings.sourceMode,
         reveal: () => void this.setMode("all"),
       }),
     )
@@ -128,7 +131,11 @@ export default class LangBlocksPlugin extends Plugin {
 
   /** Tell every open editor about the current mode and whether folding is on. */
   dispatchToEditors() {
-    const effects = [setModeEffect.of(this.settings.mode), setEnabledEffect.of(this.settings.livePreview)]
+    const effects = [
+      setModeEffect.of(this.settings.mode),
+      setEnabledEffect.of(this.settings.livePreview),
+      setSourceModeEffect.of(this.settings.sourceMode),
+    ]
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view
       if (!(view instanceof MarkdownView)) continue
@@ -224,6 +231,20 @@ class LangBlocksSettingTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.livePreview).onChange(async (value) => {
           this.plugin.settings.livePreview = value
+          await this.plugin.saveSettings()
+          this.plugin.dispatchToEditors()
+        }),
+      )
+
+    new Setting(containerEl)
+      .setName("Fold in source mode too")
+      .setDesc(
+        "Also fold the blocks of the other languages in source mode. Line numbers then skip the folded lines. " +
+          "Needs the Live Preview folding above to be on.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.sourceMode).onChange(async (value) => {
+          this.plugin.settings.sourceMode = value
           await this.plugin.saveSettings()
           this.plugin.dispatchToEditors()
         }),

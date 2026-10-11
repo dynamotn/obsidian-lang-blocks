@@ -38,7 +38,8 @@ reads the same in Obsidian as on the published garden.
 - **Live Preview** folds the blocks of the other languages into a one-line
   placeholder such as `en-US · 12 lines hidden`; click it to show every
   language. A block stays open while the cursor or a selection is inside it, so
-  you never edit text you can't see. Source mode always shows everything.
+  you never edit text you can't see. Source mode shows everything unless
+  *Fold in source mode too* is on.
 
 Switching never rewrites a note: reading mode toggles a CSS class on sections
 that are already rendered, and Live Preview only changes editor decorations.
@@ -49,13 +50,14 @@ that are already rendered, and Live Preview only changes editor decorations.
   cycles through them. Default `vi-VN, en-US`.
 - **Localized inline title**: on by default.
 - **Fold other languages in Live Preview**: on by default.
+- **Fold in source mode too**: off by default. Line numbers skip the folded
+  lines.
 
 ## Limits
 
 - Put every marker on a line of its own. A line that merely mentions one, such
   as a sentence quoting `<!--lang:*-->` in inline code, still counts as a
   marker (the datme rule) and silently ends the block it sits in.
-- Source mode always shows every block.
 - Embedded notes and hover previews show every block: Obsidian gives the plugin
   no source position for them, and the plugin never hides what it can't place.
 - A section that mixes two languages, which happens only when a marker sits

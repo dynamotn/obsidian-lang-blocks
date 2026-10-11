@@ -1,8 +1,8 @@
 /**
- * Live Preview support: fold the blocks of the languages not shown into a
- * one-line placeholder. Source mode keeps every line, and a block is never
- * folded while the cursor or a selection is inside it, so no hidden text can
- * be edited by accident.
+ * Editor support: fold the blocks of the languages not shown into a one-line
+ * placeholder. Live Preview folds by default; source mode only when asked to.
+ * A block is never folded while the cursor or a selection is inside it, so no
+ * hidden text can be edited by accident.
  */
 import { RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view"
@@ -15,11 +15,16 @@ export const setModeEffect = StateEffect.define<Mode>()
 /** Sent to every editor when Live Preview folding is turned on or off. */
 export const setEnabledEffect = StateEffect.define<boolean>()
 
+/** Sent to every editor when source mode folding is turned on or off. */
+export const setSourceModeEffect = StateEffect.define<boolean>()
+
 interface Options {
   /** The language shown when an editor opens. */
   mode: () => Mode
   /** Whether folding is on when an editor opens. */
   enabled: () => boolean
+  /** Whether source mode folds too when an editor opens. */
+  sourceMode: () => boolean
   /** Called when the reader clicks a placeholder. */
   reveal: () => void
 }
@@ -27,6 +32,7 @@ interface Options {
 interface FoldState {
   mode: Mode
   enabled: boolean
+  sourceMode: boolean
   decorations: DecorationSet
 }
 
@@ -61,7 +67,8 @@ class FoldWidget extends WidgetType {
 }
 
 function build(state: EditorState, fold: Omit<FoldState, "decorations">, reveal: () => void): DecorationSet {
-  if (!fold.enabled || fold.mode === "all" || !state.field(editorLivePreviewField, false)) return Decoration.none
+  if (!fold.enabled || fold.mode === "all") return Decoration.none
+  if (!fold.sourceMode && !state.field(editorLivePreviewField, false)) return Decoration.none
   const doc = state.doc
   const builder = new RangeSetBuilder<Decoration>()
   for (const run of hiddenRuns(lineLangs(doc.toString()), fold.mode)) {
@@ -77,27 +84,29 @@ function build(state: EditorState, fold: Omit<FoldState, "decorations">, reveal:
 export function langBlocksEditor(options: Options): Extension {
   const field = StateField.define<FoldState>({
     create(state) {
-      const fold = { mode: options.mode(), enabled: options.enabled() }
+      const fold = { mode: options.mode(), enabled: options.enabled(), sourceMode: options.sourceMode() }
       return { ...fold, decorations: build(state, fold, options.reveal) }
     },
     update(value, tr) {
-      let { mode, enabled } = value
+      let { mode, enabled, sourceMode } = value
       for (const effect of tr.effects) {
         if (effect.is(setModeEffect)) mode = effect.value
         if (effect.is(setEnabledEffect)) enabled = effect.value
+        if (effect.is(setSourceModeEffect)) sourceMode = effect.value
       }
       const livePreviewChanged =
         tr.startState.field(editorLivePreviewField, false) !== tr.state.field(editorLivePreviewField, false)
       if (
         mode === value.mode &&
         enabled === value.enabled &&
+        sourceMode === value.sourceMode &&
         !tr.docChanged &&
         !tr.selection &&
         !livePreviewChanged
       ) {
         return value
       }
-      const fold = { mode, enabled }
+      const fold = { mode, enabled, sourceMode }
       return { ...fold, decorations: build(tr.state, fold, options.reveal) }
     },
     provide: (f) => [

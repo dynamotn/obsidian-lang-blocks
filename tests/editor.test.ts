@@ -6,7 +6,7 @@ import { EditorView, type DecorationSet } from "@codemirror/view"
 // editor extension reads, whether the editor is in Live Preview.
 const livePreview = StateField.define<boolean>({ create: () => true, update: (v) => v })
 mock.module("obsidian", () => ({ editorLivePreviewField: livePreview }))
-const { langBlocksEditor, setEnabledEffect, setModeEffect } = await import("../src/editor")
+const { langBlocksEditor, setEnabledEffect, setModeEffect, setSourceModeEffect } = await import("../src/editor")
 
 const doc = [
   "# Title", //               line 1
@@ -19,10 +19,17 @@ const doc = [
   "shared", //                line 8
 ].join("\n")
 
-function stateWith(opts: { mode?: string; live?: boolean; cursorLine?: number; enabled?: boolean } = {}) {
+function stateWith(
+  opts: { mode?: string; live?: boolean; cursorLine?: number; enabled?: boolean; sourceMode?: boolean } = {},
+) {
   const extensions: Extension[] = [
     opts.live === false ? livePreview.init(() => false) : livePreview,
-    langBlocksEditor({ mode: () => opts.mode ?? "vi-VN", enabled: () => opts.enabled ?? true, reveal: () => {} }),
+    langBlocksEditor({
+      mode: () => opts.mode ?? "vi-VN",
+      enabled: () => opts.enabled ?? true,
+      sourceMode: () => opts.sourceMode ?? false,
+      reveal: () => {},
+    }),
   ]
   let state = EditorState.create({ doc, extensions })
   const line = state.doc.line(opts.cursorLine ?? 1)
@@ -66,6 +73,15 @@ describe("Live Preview folding", () => {
     expect(folded(state)).toEqual([[2, 3]])
     state = state.update({ effects: setEnabledEffect.of(false) }).state
     expect(folded(state)).toEqual([])
+  })
+
+  test("folds in source mode only when asked to", () => {
+    expect(folded(stateWith({ live: false, sourceMode: true }))).toEqual([[4, 6]])
+    let state = stateWith({ live: false })
+    expect(folded(state)).toEqual([])
+    state = state.update({ effects: setSourceModeEffect.of(true) }).state
+    expect(folded(state)).toEqual([[4, 6]])
+    expect(folded(stateWith({ live: false, sourceMode: true, enabled: false }))).toEqual([])
   })
 
   test("refolds after an edit", () => {
